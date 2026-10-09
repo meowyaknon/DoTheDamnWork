@@ -1,0 +1,33 @@
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #FEF3E2;
+}
+
+.NavBar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 20px;
+    background-color: #F4AE52;
+    border-bottom: 1px solid #2A1A0E;
+    position: sticky;
+    top: 0;
+    box-shadow: inset 0 4px 16px #D4621A99, 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+#selectionNavBar {
+    display: flex;
+    gap: 15px;
+}
+.icon-btn {
+    text-decoration: none;
+    color: #2A1A0E;
+    padding: 8px 16px;
+    border-radius: 20px;
+    transition: all 0.2s ease;
+
+}
+.icon-btn:hover {
+    transform: translateY(2px);
+    box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.4);
+}
