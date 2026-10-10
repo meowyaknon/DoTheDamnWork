@@ -12,11 +12,11 @@
     <header class="NavBar">
         <p>DoTheDamnWork</p>
         <div id ="selectionNavBar">
-            <a class = "icon-btn" href="#about">About</a>
-            <a class = "icon-btn" href="#component">Component</a>
-            <a class = "icon-btn" href="#video">Video</a>
-            <a class = "icon-btn" href="#source code">Source code</a>
-            <a class = "icon-btn" href="#member">Member</a>
+            <a class = "NavBar-menu" href="#about">About</a>
+            <a class = "NavBar-menu" href="#component">Component</a>
+            <a class = "NavBar-menu" href="#video">Video</a>
+            <a class = "NavBar-menu" href="#source-code">Source code</a>
+            <a class = "NavBar-menu" href="#member">Member</a>
         </div>
     </header>
     <!--########################## NevBar #############################-->
@@ -41,21 +41,21 @@
 
         <div class = "about-cards-container">
             <div class = "card-about">
-                <h3 class = "card-header3">Arduino Uno R4 WiFi</h3>
-                <h5 class = "card-header5">Physical Controller</h5>
-                <p class = "card-p">รับคำสั่งจากปุ่มกดจริง (Start/Pause/Reset) ควบคุมรอบเวลา แจ้งเตือนผ่าน LED/Buzzer และส่งสถานะผ่าน Wi-Fi</p>
+                <h3 class = "card-about-header3">Arduino Uno R4 WiFi</h3>
+                <h5 class = "card-about-header5">Physical Controller</h5>
+                <p class = "card-about-p">รับคำสั่งจากปุ่มกดจริง (Start/Pause/Reset) ควบคุมรอบเวลา แจ้งเตือนผ่าน LED/Buzzer และส่งสถานะผ่าน Wi-Fi</p>
             </div>
 
             <div class = "card-about">
-                <h3 class = "card-header3">Web Server</h3>
-                <h5 class = "card-header5">Backend & API</h5>
-                <p class = "card-p">รับข้อมูลจาก Arduino เพื่อจัดการสถานะ และส่งข้อมูลแบบ Real-time ผ่าน WebSocket</p>
+                <h3 class = "card-about-header3">Web Server</h3>
+                <h5 class = "card-about-header5">Backend & API</h5>
+                <p class = "card-about-p">รับข้อมูลจาก Arduino เพื่อจัดการสถานะ และส่งข้อมูลแบบ Real-time ผ่าน WebSocket</p>
             </div>
 
             <div class = "card-about">
-                <h3 class = "card-header3">Pomodoro Dashboard</h3>
-                <h5 class = "card-header5">Frontend Interface</h5>
-                <p class = "card-p">หน้าเว็บแสดงเวลาที่เหลือ โหมด Focus / Break ความคืบหน้า และประวัติการทำงาน</p>
+                <h3 class = "card-about-header3">Pomodoro Dashboard</h3>
+                <h5 class = "card-about-header5">Frontend Interface</h5>
+                <p class = "card-about-p">หน้าเว็บแสดงเวลาที่เหลือ โหมด Focus / Break ความคืบหน้า และประวัติการทำงาน</p>
             </div>
         </div>
     </section>
@@ -72,29 +72,48 @@
         <div class = "component-cards-container">
             <div class = "card-component">
                 <img src = "image/led.jpg" alt = "LED" class = "card-component-img">
-                <h3 class = "card-title">LED</h3>
+                <h3 class = "card-component-title">LED</h3>
                 <p class = "card-component-desc">สำหรับแสดงผลสถานะการทำงาน</p>
             </div>
 
             <div class = "card-component">
                 <img src = "image/buzzer.jpg" alt = "Buzzer" class = "card-component-img">
-                <h3 class = "card-title">Buzzer</h3>
+                <h3 class = "card-component-title">Buzzer</h3>
                 <p class = "card-component-desc">ส่งเสียงแจ้งเตือนเมื่อตรวจจับว่าผู้ใช้กำลังใช้โทรศัพท์หรือไม่อยู่โต๊ะทำงานขณะที่อยู่ช่วง Focus หรือเมื่อหมดเวลา</p>
             </div>
 
             <div class = "card-component">
                 <img src = "image/button.jpg" alt = "Button" class = "card-component-img">
-                <h3 class = "card-title">Button</h3>
+                <h3 class = "card-component-title">Button</h3>
                 <p class = "card-component-desc">ปุ่มกดสำหรับสั่งงาน Start, Pause และ Reset รอบเวลา Pomodoro</p>
             </div>
 
             <div class = "card-component">
                 <img src = "image/potentiometer.jpg" alt = "potentiometer" class = "card-component-img">
-                <h3 class = "card-title">Potentiometer</h3>
+                <h3 class = "card-component-title">Potentiometer</h3>
                 <p class = "card-component-desc">สามารถเลื่อนหรือหมุนได้เพื่อให้ผู้ใช้สามารถปรับเพิ่มลดระยะเวลาได้ผ่านอุปกรณ์นี้</p>
             </div>
         </div>
     </section>
     <!--########################## Component #############################-->
+
+
+    <!--########################## Video #############################-->
+    <section id = "video" class= "video-section">
+        <div class = "video-header">
+            <h2>Project Demonstration</h2>
+            <p>วิดีโออธิบายวิธีการทำงานของโปรเจกต์</p>
+        </div>
+
+        <div class="video-container">
+            <iframe src="https://www.youtube.com/embed/รหัสวิดีโอ" 
+                    title="YouTube video player" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowfullscreen>
+            </iframe>
+        </div>
+    </section>
+    <!--########################## Video #############################-->
+
 </body>
 </html>
