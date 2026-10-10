@@ -11,7 +11,7 @@
     <!--########################## NevBar #############################-->
     <header class="NavBar">
         <p>DoTheDamnWork</p>
-        <div id = selectionNavBar>
+        <div id ="selectionNavBar">
             <a class="icon-btn" href="#about">About</a>
             <a class="icon-btn" href="#component">Component</a>
             <a class="icon-btn" href="#video">Video</a>
@@ -31,5 +31,34 @@
     </section>
     <!--########################## Hero-Section #############################-->
 
+
+    <!--########################## About #############################-->
+    <section id="about" class="about-section">
+        <div class="about-header">
+            <h2>About The Project</h2>
+            <p>ระบบนับเวลาแบบ Pomodoro ที่เชื่อมต่อฮาร์ดแวร์เข้ากับหน้าเว็บแบบ Real-time</p>
+        </div>
+
+        <div class="about-cards-container">
+            <div class="card">
+                <h3 class="card-header3">Arduino Uno R4 WiFi</h3>
+                <h5 class="card-header5">Physical Controller</h5>
+                <p class="card-p">รับคำสั่งจากปุ่มกดจริง (Start/Pause/Reset) ควบคุมรอบเวลา แจ้งเตือนผ่าน LED/Buzzer และส่งสถานะผ่าน Wi-Fi</p>
+            </div>
+
+            <div class="card">
+                <h3 class="card-header3">Web Server</h3>
+                <h5 class="card-header5">Backend & API</h5>
+                <p class="card-p">รับข้อมูลจาก Arduino เพื่อจัดการสถานะ และส่งข้อมูลแบบ Real-time ผ่าน WebSocket</p>
+            </div>
+
+            <div class="card">
+                <h3 class="card-header3">Pomodoro Dashboard</h3>
+                <h5 class="card-header5">Frontend Interface</h5>
+                <p class="card-p">หน้าเว็บแสดงเวลาที่เหลือ โหมด Focus / Break ความคืบหน้า และประวัติการทำงาน</p>
+            </div>
+        </div>
+    </section>
+    <!--########################## About #############################-->
 </body>
 </html>
