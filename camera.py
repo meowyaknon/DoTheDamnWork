@@ -16,12 +16,12 @@ except ModuleNotFoundError as exc:
     raise
   raise SystemExit("Install the missing dependency with: python -m pip install ultralytics") from exc
 
-serial = importlib.import_module("serial")
+# serial = importlib.import_module("serial")
 
 # ---------- Configuration ----------
 MODEL_PATH = "yolo26n.pt"
-SERIAL_PORT = "COM3"   # Change this to your Arduino COM port
-BAUD_RATE = 9600
+# SERIAL_PORT = "COM3"   # Change this to your Arduino COM port
+# BAUD_RATE = 9600
 CONFIDENCE_THRESHOLD = 0.50
 CLEAR_DELAY = 1.5      # Seconds without detection before clearing
 # -----------------------------------
@@ -29,11 +29,11 @@ CLEAR_DELAY = 1.5      # Seconds without detection before clearing
 model = YOLO(MODEL_PATH)
 
 # Open serial connection to Arduino
-board = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.1)
+# board = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.1)
 
 # Allow Arduino to reset after opening the serial port
-time.sleep(2)
-board.write(b"PHONE_CLEAR\n")
+# time.sleep(2)
+# board.write(b"PHONE_CLEAR\n")
 
 cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -44,7 +44,7 @@ last_phone_seen = 0.0
 
 
 def send_command(command):
-    board.write((command + "\n").encode("utf-8"))
+    # board.write((command + "\n").encode("utf-8"))
     print("Arduino command:", command)
 
 
@@ -119,9 +119,10 @@ try:
 finally:
     # Ensure the warning stops when the program exits
     try:
-        board.write(b"PHONE_CLEAR\n")
-        time.sleep(0.1)
-        board.close()
+        # board.write(b"PHONE_CLEAR\n")
+        # time.sleep(0.1)
+        # board.close()
+        pass
     except Exception:
         pass
 
