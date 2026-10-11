@@ -208,10 +208,11 @@ body {
 
 /*====================== for Member-section =====================*/
 .member-section {
-    padding: 160px 20px;
+    padding: 130px 20px;
 }
 .member-header {
     text-align: center;
+    margin: 0;
     margin-bottom: 50px;
 }
 /*cards*/
