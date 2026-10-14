@@ -1,11 +1,15 @@
 import express from "express";
 import healthRoutes from "./routes/health.routes.js";
 import { errorHandler } from "./error.middleware.js";
+import { notFoundHandler } from "./not-found.middleware.js";
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json());
+
+// Not found handler should be registered after all other routes
+app.use(notFoundHandler);
 
 // Error handling middleware should be registered after all other middleware and routes
 app.use(errorHandler);
