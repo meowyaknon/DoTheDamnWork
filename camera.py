@@ -1,39 +1,43 @@
-
 import importlib
 import time
+import json
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+from arduino_controller import ArduinoController
 
 try:
-  cv2 = importlib.import_module("cv2")
+    cv2 = importlib.import_module("cv2")
 except ModuleNotFoundError as exc:
-  if exc.name != "cv2":
-    raise
-  raise SystemExit("Install the missing dependency with: python -m pip install opencv-python") from exc
+    if exc.name != "cv2":
+        raise
+    raise SystemExit(
+        "Install the missing dependency with: "
+        "python -m pip install opencv-python"
+    ) from exc
 
 try:
-  YOLO = importlib.import_module("ultralytics").YOLO
+    YOLO = importlib.import_module("ultralytics").YOLO
 except ModuleNotFoundError as exc:
-  if exc.name != "ultralytics":
-    raise
-  raise SystemExit("Install the missing dependency with: python -m pip install ultralytics") from exc
+    if exc.name != "ultralytics":
+        raise
+    raise SystemExit(
+        "Install the missing dependency with: "
+        "python -m pip install ultralytics"
+    ) from exc
 
-# serial = importlib.import_module("serial")
 
 # ---------- Configuration ----------
 MODEL_PATH = "yolo26n.pt"
-# SERIAL_PORT = "COM3"   # Change this to your Arduino COM port
-# BAUD_RATE = 9600
 CONFIDENCE_THRESHOLD = 0.50
-CLEAR_DELAY = 1.5      # Seconds without detection before clearing
+CLEAR_DELAY = 1.5  # Seconds without detection before clearing
 # -----------------------------------
 
+BACKEND_URL = "http://localhost:3000/api/status/phone"
 model = YOLO(MODEL_PATH)
 
-# Open serial connection to Arduino
-# board = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.1)
-
-# Allow Arduino to reset after opening the serial port
-# time.sleep(2)
-# board.write(b"PHONE_CLEAR\n")
+# Use mock mode until the Arduino is available.
+controller = ArduinoController(mode="mock")
 
 cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -42,23 +46,63 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 phone_detected = False
 last_phone_seen = 0.0
 
+def update_backend_phone_status(detected: bool):
+    payload = json.dumps({
+        "detected": detected
+    }).encode("utf-8")
+
+    request = Request(
+        BACKEND_URL,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urlopen(request, timeout=2) as response:
+            response.read()
+
+        status = "detected" if detected else "clear"
+        print(f"[Backend] Phone detection: {status}")
+
+    except HTTPError as exc:
+        print(f"[Backend] HTTP error: {exc.code}")
+
+    except (URLError, TimeoutError, OSError) as exc:
+        print(f"[Backend] Connection failed: {exc}")
 
 def send_command(command):
-    # board.write((command + "\n").encode("utf-8"))
-    print("Arduino command:", command)
+    # Send the command to the arduino controller.
+    try:
+        controller.send_command(command)
+    except Exception as exc:
+        print(f"[Arduino] Command failed: {exc}")
 
+    # Update the backend only for recognized state changes.
+    if command == "PHONE_DETECTED":
+        update_backend_phone_status(True)
+
+    elif command == "PHONE_CLEAR":
+        update_backend_phone_status(False)
 
 try:
+    # Initialize the controller before processing camera frames.
+    controller.connect()
+
+    # Reset ant stale backend status at statup
+    update_backend_phone_status(False)
+
     if not cap.isOpened():
         raise RuntimeError("Cannot open webcam")
 
     while True:
         success, frame = cap.read()
+
         if not success:
             print("Cannot read webcam frame")
             break
 
-        # Run YOLO on the current frame
+        # Run YOLO on the current frame.
         results = model.predict(frame, verbose=False)
 
         found_phone = False
@@ -70,7 +114,6 @@ try:
                 class_name = result.names[class_id]
                 label = str(class_name).lower().replace("_", " ")
 
-                # COCO models commonly use the label "cell phone".
                 is_phone = label in {
                     "cell phone",
                     "mobile phone",
@@ -97,10 +140,11 @@ try:
             phone_detected = False
             send_command("PHONE_CLEAR")
 
-        # Draw detection boxes and display status
+        # Draw detection boxes and display status.
         annotated_frame = results[0].plot()
 
         status = "PHONE DETECTED" if phone_detected else "FOCUS"
+
         cv2.putText(
             annotated_frame,
             status,
@@ -117,14 +161,12 @@ try:
             break
 
 finally:
-    # Ensure the warning stops when the program exits
+    # Attempt to close the controller even if camera cleanup fails.
     try:
-        # board.write(b"PHONE_CLEAR\n")
-        # time.sleep(0.1)
-        # board.close()
-        pass
-    except Exception:
-        pass
-
-    cap.release()
-    cv2.destroyAllWindows()
+        controller.close()
+    finally:
+        try:
+            update_backend_phone_status(False)
+        finally:
+            cap.release()
+            cv2.destroyAllWindows()

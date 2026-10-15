@@ -1,10 +1,10 @@
-
 import { useEffect, useState } from "react";
 
 type SystemStatus = {
   server: string;
   focus: string;
   device: string;
+  phoneDetection: "clear" | "detected";
 };
 
 type StatusResponse = {
@@ -228,10 +228,13 @@ function App() {
   };
 
   const serverConnected =
-    !error && systemStatus.server.toLowerCase().includes("connected");
+    !error && systemStatus.server.toLowerCase() === "online";
 
   const deviceConnected =
-    systemStatus.device.toLowerCase().includes("connected");
+    systemStatus.device.toLowerCase() === "connected";
+
+  const phoneDetected =
+    systemStatus.phoneDetection === "detected";
 
   return (
     <div className={`${isDark ? "theme-dark" : "theme-light"} min-h-screen`}>
@@ -430,7 +433,7 @@ function App() {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:gap-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3 2xl:gap-6">
               <article className={cardClass}>
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-xs font-bold tracking-[0.14em] text-[var(--text-muted)]">
@@ -470,6 +473,29 @@ function App() {
                 </p>
                 <p className="mt-2 text-sm leading-5 text-[var(--text-secondary)]">
                   Hardware status reported by API
+                </p>
+              </article>
+
+              <article className={cardClass}>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-bold tracking-[0.14em] text-[var(--text-muted)]">
+                    PHONE DETECTION
+                  </p>
+                  <span
+                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                      phoneDetected ? "bg-red-500" : "bg-emerald-500"
+                    }`}
+                  />
+                </div>
+
+                <p className="mt-4 break-words text-lg font-semibold sm:text-xl">
+                  {phoneDetected ? "PHONE DETECTED" : "CLEAR"}
+                </p>
+
+                <p className="mt-2 text-sm leading-5 text-[var(--text-secondary)]">
+                  {phoneDetected
+                    ? "A phone has been detected by the camera."
+                    : "No phone is currently detected."}
                 </p>
               </article>
             </div>
