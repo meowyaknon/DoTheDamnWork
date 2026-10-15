@@ -17,21 +17,30 @@ let status: FocusStatus = "idle";
 let remainingSeconds = DEFAULT_DURATION_SECONDS;
 let startedAt: number | null = null;
 
+
 function updateRemainingTime(): void {
   if (status !== "focusing" || startedAt === null) {
     return;
   }
 
+  const now = Date.now();
+
   const elapsedSeconds = Math.floor(
-    (Date.now() - startedAt) / 1000,
+    (now - startedAt) / 1000,
   );
+
+  if (elapsedSeconds <= 0) {
+    return;
+  }
 
   remainingSeconds = Math.max(
     0,
     remainingSeconds - elapsedSeconds,
   );
 
-  startedAt = Date.now();
+  // เลื่อนไปตามเวลาที่ผ่านไปจริง
+  // แทนการตั้งต้นเวลาใหม่ด้วย now
+  startedAt += elapsedSeconds * 1000;
 
   if (remainingSeconds === 0) {
     status = "completed";
