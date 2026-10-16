@@ -14,9 +14,9 @@ export type FocusState = {
 const DEFAULT_DURATION_SECONDS = 25 * 60;
 
 let status: FocusStatus = "idle";
+let durationSeconds = DEFAULT_DURATION_SECONDS;
 let remainingSeconds = DEFAULT_DURATION_SECONDS;
 let startedAt: number | null = null;
-
 
 function updateRemainingTime(): void {
   if (status !== "focusing" || startedAt === null) {
@@ -38,8 +38,7 @@ function updateRemainingTime(): void {
     remainingSeconds - elapsedSeconds,
   );
 
-  // เลื่อนไปตามเวลาที่ผ่านไปจริง
-  // แทนการตั้งต้นเวลาใหม่ด้วย now
+  // Advance by the elapsed time to avoid countdown drift.
   startedAt += elapsedSeconds * 1000;
 
   if (remainingSeconds === 0) {
@@ -53,11 +52,40 @@ export function getFocusStatus(): FocusState {
 
   return {
     status,
-    durationSeconds: DEFAULT_DURATION_SECONDS,
+    durationSeconds,
     remainingSeconds,
   };
 }
 
+export function setFocusDuration(minutes: number): FocusState {
+  if (
+    !Number.isInteger(minutes) ||
+    minutes < 5 ||
+    minutes > 60 ||
+    minutes % 5 !== 0
+  ) {
+    throw new Error(
+      "Focus duration must be a multiple of 5 between 5 and 60 minutes",
+    );
+  }
+
+  // Update the current countdown before changing the duration.
+  updateRemainingTime();
+
+  // Only change the duration while not actively focusing.
+  if (status === "focusing") {
+    throw new Error(
+      "Cannot change focus duration while the timer is running",
+    );
+  }
+
+  durationSeconds = minutes * 60;
+  remainingSeconds = durationSeconds;
+  status = "idle";
+  startedAt = null;
+
+  return getFocusStatus();
+}
 
 export function startFocus(): FocusState {
   updateRemainingTime();
@@ -72,7 +100,6 @@ export function startFocus(): FocusState {
   return getFocusStatus();
 }
 
-
 export function pauseFocus(): FocusState {
   updateRemainingTime();
 
@@ -84,10 +111,9 @@ export function pauseFocus(): FocusState {
   return getFocusStatus();
 }
 
-
 export function resetFocus(): FocusState {
   status = "idle";
-  remainingSeconds = DEFAULT_DURATION_SECONDS;
+  remainingSeconds = durationSeconds;
   startedAt = null;
 
   return getFocusStatus();

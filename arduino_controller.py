@@ -82,6 +82,32 @@ class ArduinoController:
 
         self.commands_sent.append(command)
 
+    def read_message(self) -> str | None:
+        # """Read one line of text from Arduino, if available."""
+        if not self.connected:
+            return None
+
+        if self.mode == "mock":
+            return None
+
+        if self.connection is None:
+            return None
+
+        try:
+            if self.connection.in_waiting == 0:
+                return None
+
+            message = self.connection.readline().decode(
+                "utf-8",
+                errors="replace",
+            ).strip()
+
+            return message or None
+
+        except Exception as exc:
+            print(f"[Arduino] Failed to read message: {exc}")
+            return None
+
     def close(self) -> None:
         if not self.connected:
             return

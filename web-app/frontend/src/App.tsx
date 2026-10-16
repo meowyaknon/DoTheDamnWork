@@ -119,7 +119,7 @@ function App() {
     }
 
     fetchSystemStatus();
-    const intervalId = window.setInterval(fetchSystemStatus, 3000);
+    const intervalId = window.setInterval(fetchSystemStatus, 750);
 
     return () => {
       active = false;
