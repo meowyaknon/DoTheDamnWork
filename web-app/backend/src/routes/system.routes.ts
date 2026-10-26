@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   getSystemStatus,
   updatePhoneDetection,
+  updateDeviceHeartbeat,
 } from "../services/system.service.js";
 
 const router = Router();
@@ -35,5 +36,17 @@ router.post("/status/phone", (req, res) => {
     message: "Phone detection status update successfully",
   });
 });
+
+
+router.post("/status/device/heartbeat", (_req, res) => {
+  updateDeviceHeartbeat();
+
+  res.status(200).json({
+    status: "ok",
+    data: { device: "connected" },
+    message: "Device heartbeat received successfully",
+  });
+});
+
 
 export default router;

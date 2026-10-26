@@ -1,14 +1,68 @@
-const int RED_PIN = 6;
-const int GREEN_PIN = 5;
-const int BLUE_PIN = 3;
+#include <WiFiS3.h>
+#include "arduino_secrets.h"
 
-const int START_BUTTON_PIN = 2;
-const int PAUSE_BUTTON_PIN = 4;
+WiFiClient heartbeatClient;
+
+IPAddress backendIP(10, 157, 72, 124);
+const int BACKEND_PORT = 3000;
+
+unsigned long lastHeartbeat = 0;
+const unsigned long HEARTBEAT_INTERVAL = 5000;
+const unsigned long HTTP_TIMEOUT = 1000;
+
+bool wifiWasConnected = false;
+
+unsigned long lastWifiAttempt = 0;
+
+const unsigned long WIFI_RETRY_INTERVAL = 10000;
+
+void beginWifiConnection() {
+  Serial.println("[WiFi] Connecting...");
+  WiFi.begin(SECRET_SSID, SECRET_PASS);
+  lastWifiAttempt = millis();
+}
+
+void maintainWifiConnection() {
+  unsigned long now = millis();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!wifiWasConnected) {
+      wifiWasConnected = true;
+
+      // รอให้บอร์ดได้รับ IP Address
+      delay(1000);
+
+      Serial.println("[WiFi] Connected");
+      Serial.print("[WiFi] IP: ");
+      Serial.println(WiFi.localIP());
+    }
+    return;
+  }
+
+  if (wifiWasConnected) {
+    wifiWasConnected = false;
+    Serial.println("[WiFi] Connection lost");
+  }
+
+  if (now - lastWifiAttempt >= WIFI_RETRY_INTERVAL) {
+    lastWifiAttempt = now;
+
+    Serial.println("[WiFi] Retrying...");
+    WiFi.begin(SECRET_SSID, SECRET_PASS);
+  }
+}
+
+const int RED_PIN = 2;
+const int GREEN_PIN = 3;
+const int BLUE_PIN = 4;
+
+const int START_BUTTON_PIN = 5;
+const int PAUSE_BUTTON_PIN = 6;
 const int RESET_BUTTON_PIN = 7;
 
 const int POTENTIOMETER_PIN = A0;
 
-const int BUZZER_PIN = 9;
+const int BUZZER_PIN = 8;
 
 bool phoneDetected = false;
 bool focusRunning = false;
@@ -100,16 +154,67 @@ void updateStatusLED() {
 }
 
 
+void sendHeartbeat() {
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
+  unsigned long now = millis();
+
+  if (now - lastHeartbeat < HEARTBEAT_INTERVAL) {
+    return;
+  }
+
+  lastHeartbeat = now;
+
+  Serial.println("[HTTP] Sending heartbeat...");
+
+  Serial.print("[HTTP] Connecting to ");
+  Serial.print(backendIP);
+  Serial.print(":");
+  Serial.println(BACKEND_PORT);
+
+  int connectionResult = heartbeatClient.connect(
+    backendIP,
+    BACKEND_PORT
+  );
+
+  Serial.print("[HTTP] Connect result: ");
+  Serial.println(connectionResult);
+
+  if (!connectionResult) {
+    Serial.println("[HTTP] Connection failed");
+    heartbeatClient.stop();
+    return;
+  }
+
+  Serial.println("[HTTP] TCP connected");
+
+  const char* body = "{}";
+
+  heartbeatClient.println(
+    "POST /api/status/device/heartbeat HTTP/1.1"
+  );
+
+  heartbeatClient.println("Host: 10.157.72.124:3000");
+  heartbeatClient.println("Content-Type: application/json");
+  heartbeatClient.println("Content-Length: 2");
+  heartbeatClient.println("Connection: close");
+  heartbeatClient.println();
+  heartbeatClient.print(body);
+
+  // Give the network stack a short opportunity to send the request.
+  heartbeatClient.flush();
+  heartbeatClient.stop();
+
+  Serial.println("[HTTP] Heartbeat request sent");
+}
 
 void setup() {
   Serial.begin(9600);
-
-  // Wait until Serial Monitor is ready.
-  while (!Serial) {
-    delay(10);
-  }
-
   Serial.println("BOARD_READY");
+
+  beginWifiConnection();
 
   pinMode(RED_PIN, OUTPUT);
   pinMode(GREEN_PIN, OUTPUT);
@@ -134,6 +239,9 @@ void setup() {
 
 
 void loop() {
+  maintainWifiConnection();
+  sendHeartbeat();
+
   unsigned long now = millis();
 
   // 1. Receive commands from Python.
