@@ -4,6 +4,7 @@ import { errorHandler } from "./error.middleware.js";
 import { notFoundHandler } from "./not-found.middleware.js";
 import systemRoutes from "./routes/system.routes.js";
 import focusRouters from "./routes/focus.routes.js"
+import "./services/mqtt.service.js";
 
 const app = express();
 const PORT = 3000;

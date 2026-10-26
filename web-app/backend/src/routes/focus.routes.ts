@@ -1,4 +1,5 @@
 import { Router } from "express"
+import { publishFocusCommand } from "../services/mqtt.service.js";
 
 import {
     getFocusStatus,
@@ -18,6 +19,9 @@ router.get("/focus",(_req, res) => {
 });
 
 router.post("/focus/start", (_req, res) => {
+    const data = startFocus();
+    publishFocusCommand("start");
+
     res.status(200).json({
         status: "ok",
         data: startFocus(),
@@ -25,6 +29,9 @@ router.post("/focus/start", (_req, res) => {
 });
 
 router.post("/focus/pause", (_req, res) => {
+    const data = pauseFocus();
+    publishFocusCommand("pause");
+
     res.status(200).json({
         status: "ok",
         data: pauseFocus(),
@@ -32,6 +39,9 @@ router.post("/focus/pause", (_req, res) => {
 });
 
 router.post("/focus/reset", (_req, res) => {
+    const data = resetFocus();
+    publishFocusCommand("reset");
+
     res.status(200).json({
         status: "ok",
         data: resetFocus(),

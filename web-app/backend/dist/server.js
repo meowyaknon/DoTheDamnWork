@@ -4,6 +4,7 @@ import { errorHandler } from "./error.middleware.js";
 import { notFoundHandler } from "./not-found.middleware.js";
 import systemRoutes from "./routes/system.routes.js";
 import focusRouters from "./routes/focus.routes.js";
+import "./services/mqtt.service.js";
 const app = express();
 const PORT = 3000;
 app.use(express.json());
@@ -15,6 +16,11 @@ app.use("/api", focusRouters);
 app.use(notFoundHandler);
 // Error handling middleware should be registered after all other middleware and routes
 app.use(errorHandler);
-app.listen(PORT, () => {
-    console.log(`Server is running at http://localhost:${PORT}`);
+// app.listen(PORT, () => {
+//   console.log(`Server is running at http://localhost:${PORT}`);
+// });
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server is running on port ${PORT}`);
+    console.log(`Local:   http://localhost:${PORT}`);
+    console.log(`Network: http://10.157.72.124:${PORT}`);
 });
