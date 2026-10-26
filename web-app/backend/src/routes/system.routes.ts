@@ -1,9 +1,11 @@
+
 import { Router } from "express";
 import {
   getSystemStatus,
   updatePhoneDetection,
   updateDeviceHeartbeat,
 } from "../services/system.service.js";
+import { publishPhoneDetection } from "../services/mqtt.service.js";
 
 const router = Router();
 
@@ -20,6 +22,8 @@ router.get("/status", (_req, res) => {
 router.post("/status/phone", (req, res) => {
   const detected = req.body?.detected;
 
+  console.log("[API] Phone status request:", detected);
+
   if (typeof detected !== "boolean") {
     res.status(400).json({
       status: "error",
@@ -30,13 +34,15 @@ router.post("/status/phone", (req, res) => {
 
   const phoneDetection = updatePhoneDetection(detected);
 
+  console.log("[API] Forwarding phone status to MQTT");
+  publishPhoneDetection(detected);
+
   res.status(200).json({
     status: "ok",
     data: { phoneDetection },
     message: "Phone detection status update successfully",
   });
 });
-
 
 router.post("/status/device/heartbeat", (_req, res) => {
   updateDeviceHeartbeat();
@@ -47,6 +53,5 @@ router.post("/status/device/heartbeat", (_req, res) => {
     message: "Device heartbeat received successfully",
   });
 });
-
 
 export default router;

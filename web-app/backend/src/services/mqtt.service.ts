@@ -149,3 +149,22 @@ export function publishFocusCommand(
 export function getMqttConnectionStatus(): boolean {
   return client.connected;
 }
+
+
+export function publishPhoneDetection(detected: boolean): void {
+  if (!client.connected) {
+    console.warn("[MQTT] Not connected; phone status not published");
+    return;
+  }
+
+  const message = detected ? "detected" : "clear";
+
+  client.publish(TOPICS.phoneDetection, message, (error) => {
+    if (error) {
+      console.error("[MQTT] Failed to publish phone status:", error.message);
+      return;
+    }
+
+    console.log(`[MQTT] Phone status published: ${message}`);
+  });
+}

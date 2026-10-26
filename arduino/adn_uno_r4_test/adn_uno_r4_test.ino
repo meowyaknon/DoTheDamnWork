@@ -224,6 +224,10 @@ void updatePotentiometer() {
 // Buttons use INPUT_PULLUP, so pressed = LOW.
 // ============================================================
 
+#if NETWORK_ENABLED
+  void publishMqttMessage(const char* topic, const char* message);
+#endif
+
 bool buttonPressed(ButtonState &button) {
   int reading = digitalRead(button.pin);
 
@@ -242,9 +246,6 @@ bool buttonPressed(ButtonState &button) {
     }
   }
 
-  #if NETWORK_ENABLED
-    void publishMqttMessage(const char* topic, const char* message);
-  #endif
   return false;
 }
 
@@ -344,6 +345,43 @@ void onMqttMessage(int messageSize) {
       Serial.println("[MQTT] Focus reset");
     }
   }
+
+  if (topic == TOPIC_PHONE) {
+    if (command == "detected") {
+      phoneDetected = true;
+      tone(BUZZER_PIN, 1000);
+      updateStatusLED();
+
+      Serial.println("[ARDUINO] Phone detected via MQTT");
+    }
+    else if (command == "clear") {
+      phoneDetected = false;
+      noTone(BUZZER_PIN);
+      updateStatusLED();
+
+      Serial.println("[ARDUINO] Phone cleared via MQTT");
+    }
+
+    return;
+  }
+
+  if (topic == TOPIC_FOCUS_COMMAND) {
+    if (command == "start") {
+      focusRunning = true;
+      updateStatusLED();
+      Serial.println("[MQTT] Focus started");
+    }
+    else if (command == "pause") {
+      focusRunning = false;
+      updateStatusLED();
+      Serial.println("[MQTT] Focus paused");
+    }
+    else if (command == "reset") {
+      focusRunning = false;
+      updateStatusLED();
+      Serial.println("[MQTT] Focus reset");
+    }
+  }
 }
 
 void beginWifiConnection() {
@@ -410,7 +448,13 @@ void maintainMqttConnection() {
   if (mqttClient.subscribe(TOPIC_FOCUS_COMMAND)) {
     Serial.println("[MQTT] Subscribed to focus commands");
   } else {
-    Serial.println("[MQTT] Subscribe failed");
+    Serial.println("[MQTT] Failed to subscribe to focus commands");
+  }
+
+  if (mqttClient.subscribe(TOPIC_PHONE)) {
+    Serial.println("[MQTT] Subscribed to phone detection");
+  } else {
+    Serial.println("[MQTT] Failed to subscribe to phone detection");
   }
 
   publishMqttMessage(TOPIC_DEVICE_STATUS, "online");
