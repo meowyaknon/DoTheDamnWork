@@ -1,313 +1,423 @@
+
+/*
+ * DoTheDamnWork
+ * Board: Arduino UNO R4 WiFi
+ *
+ * Serial commands from Python:
+ *   PHONE_DETECTED
+ *   PHONE_CLEAR
+ *
+ * Messages from Arduino:
+ *   BOARD_READY
+ *   FOCUS_MINUTES:<minutes>
+ *   BUTTON_START
+ *   BUTTON_PAUSE
+ *   BUTTON_RESET
+ *
+ * Network:
+ *   POST /api/status/device/heartbeat
+ */
+
+// ============================================================
+// ZONE 1: NETWORK SWITCH
+// ============================================================
+
+// 1 = Enable Wi-Fi and backend heartbeat
+// 0 = Disable all network code for Serial/hardware testing
+#define NETWORK_ENABLED 1
+
+
+// ============================================================
+// ZONE 2: NETWORK LIBRARIES AND SETTINGS
+// Comment this whole zone when NETWORK_ENABLED is 0.
+// ============================================================
+
+#if NETWORK_ENABLED
 #include <WiFiS3.h>
 #include "arduino_secrets.h"
 
 WiFiClient heartbeatClient;
 
-IPAddress backendIP(10, 157, 72, 124);
+// Change this IP if your computer's IPv4 address changes.
+IPAddress backendIP(10, 122, 38, 124);
+const char* BACKEND_HOST = "LAPTOP-KNIGHTsss";
+
 const int BACKEND_PORT = 3000;
 
-unsigned long lastHeartbeat = 0;
 const unsigned long HEARTBEAT_INTERVAL = 5000;
 const unsigned long HTTP_TIMEOUT = 1000;
-
-bool wifiWasConnected = false;
-
-unsigned long lastWifiAttempt = 0;
-
 const unsigned long WIFI_RETRY_INTERVAL = 10000;
 
-void beginWifiConnection() {
-  Serial.println("[WiFi] Connecting...");
-  WiFi.begin(SECRET_SSID, SECRET_PASS);
-  lastWifiAttempt = millis();
-}
+unsigned long lastHeartbeat = 0;
+unsigned long lastWifiAttempt = 0;
 
-void maintainWifiConnection() {
-  unsigned long now = millis();
+bool wifiWasConnected = false;
+#endif
 
-  if (WiFi.status() == WL_CONNECTED) {
-    if (!wifiWasConnected) {
-      wifiWasConnected = true;
 
-      // รอให้บอร์ดได้รับ IP Address
-      delay(1000);
+// ============================================================
+// ZONE 3: HARDWARE PIN CONFIGURATION
+// ============================================================
 
-      Serial.println("[WiFi] Connected");
-      Serial.print("[WiFi] IP: ");
-      Serial.println(WiFi.localIP());
-    }
-    return;
-  }
-
-  if (wifiWasConnected) {
-    wifiWasConnected = false;
-    Serial.println("[WiFi] Connection lost");
-  }
-
-  if (now - lastWifiAttempt >= WIFI_RETRY_INTERVAL) {
-    lastWifiAttempt = now;
-
-    Serial.println("[WiFi] Retrying...");
-    WiFi.begin(SECRET_SSID, SECRET_PASS);
-  }
-}
-
+// RGB LED
 const int RED_PIN = 2;
 const int GREEN_PIN = 3;
 const int BLUE_PIN = 4;
 
+// Buttons
 const int START_BUTTON_PIN = 5;
 const int PAUSE_BUTTON_PIN = 6;
 const int RESET_BUTTON_PIN = 7;
 
+// Other components
+const int BUZZER_PIN = 8;
 const int POTENTIOMETER_PIN = A0;
 
-const int BUZZER_PIN = 8;
+
+// ============================================================
+// ZONE 4: HARDWARE AND FOCUS SETTINGS
+// ============================================================
+
+const unsigned long DEBOUNCE_DELAY = 50;
+
+const int MIN_FOCUS_MINUTES = 5;
+const int MAX_FOCUS_MINUTES = 60;
+const int FOCUS_STEP_MINUTES = 5;
 
 bool phoneDetected = false;
 bool focusRunning = false;
 
-String command = "";
+int focusMinutes = 25;
+int lastReportedFocusMinutes = -1;
 
-int selectedMinutes = 25;
-int lastReportedMinutes = -1;
 
-unsigned long lastPotRead = 0;
-unsigned long lastButtonCheck = 0;
+// Button debounce state
+struct ButtonState {
+  int pin;
+  int lastReading;
+  int stableState;
+  unsigned long lastChangeTime;
+};
 
-const unsigned long POT_READ_INTERVAL = 100;
-const unsigned long BUTTON_CHECK_INTERVAL = 20;
+ButtonState startButton = {
+  START_BUTTON_PIN, HIGH, HIGH, 0
+};
 
-bool lastStartReading = HIGH;
-bool lastPauseReading = HIGH;
-bool lastResetReading = HIGH;
+ButtonState pauseButton = {
+  PAUSE_BUTTON_PIN, HIGH, HIGH, 0
+};
 
-bool stableStartState = HIGH;
-bool stablePauseState = HIGH;
-bool stableResetState = HIGH;
+ButtonState resetButton = {
+  RESET_BUTTON_PIN, HIGH, HIGH, 0
+};
 
-unsigned long startDebounceTime = 0;
-unsigned long pauseDebounceTime = 0;
-unsigned long resetDebounceTime = 0;
 
-const unsigned long DEBOUNCE_DELAY = 30;
+// ============================================================
+// ZONE 5: RGB LED
+// Common-cathode RGB LED
+// ============================================================
 
 void setColor(int red, int green, int blue) {
-  // Assumes a common-cathode RGB LED.
   analogWrite(RED_PIN, red);
   analogWrite(GREEN_PIN, green);
   analogWrite(BLUE_PIN, blue);
 }
 
-int readSelectedMinutes() {
-  int rawValue = analogRead(POTENTIOMETER_PIN);
-
-  // Divide the potentiometer range into 12 steps:
-  // 5, 10, 15, ... 60 minutes.
-  int step = map(rawValue, 0, 1023, 1, 13);
-  step = constrain(step, 1, 12);
-
-  return step * 5;
-}
-
-void reportButtonEvent(const char* eventName) {
-  Serial.println(eventName);
-}
-
-void updateButton(
-  int pin,
-  bool& lastReading,
-  bool& stableState,
-  unsigned long& debounceTime,
-  const char* eventName
-) {
-  bool reading = digitalRead(pin);
-
-  if (reading != lastReading) {
-    debounceTime = millis();
-    lastReading = reading;
-  }
-
-  if (millis() - debounceTime >= DEBOUNCE_DELAY) {
-    if (reading != stableState) {
-      stableState = reading;
-
-      // INPUT_PULLUP: LOW means the button is pressed.
-      if (stableState == LOW) {
-        reportButtonEvent(eventName);
-      }
-    }
-  }
-}
-
 void updateStatusLED() {
+  // Red: phone detected
   if (phoneDetected) {
-    // Red warning takes priority over focus status.
     setColor(255, 0, 0);
-  } else if (focusRunning) {
-    // Blue means a focus session is running.
+  }
+  // Blue: focus session running
+  else if (focusRunning) {
     setColor(0, 0, 255);
-  } else {
-    // Green means idle or paused.
+  }
+  // Green: idle or paused
+  else {
     setColor(0, 255, 0);
   }
 }
 
+
+// ============================================================
+// ZONE 6: SERIAL COMMANDS
+// Keep these command names synchronized with Python.
+// ============================================================
+
+void processSerialCommand(String command) {
+  command.trim();
+
+  if (command == "PHONE_DETECTED") {
+    phoneDetected = true;
+    tone(BUZZER_PIN, 1000);
+    updateStatusLED();
+
+    Serial.println("[ARDUINO] Phone detected");
+  }
+  else if (command == "PHONE_CLEAR") {
+    phoneDetected = false;
+    noTone(BUZZER_PIN);
+    updateStatusLED();
+
+    Serial.println("[ARDUINO] Phone cleared");
+  }
+  else if (command.length() > 0) {
+    Serial.print("[ARDUINO] Unknown command: ");
+    Serial.println(command);
+  }
+}
+
+
+// ============================================================
+// ZONE 7: POTENTIOMETER
+// Maps the knob position to 5–60 minutes in 5-minute steps.
+// ============================================================
+
+void updatePotentiometer() {
+  int rawValue = analogRead(POTENTIOMETER_PIN);
+
+  int steps = map(
+    rawValue,
+    0,
+    1023,
+    0,
+    (MAX_FOCUS_MINUTES - MIN_FOCUS_MINUTES) / FOCUS_STEP_MINUTES
+  );
+
+  int newMinutes =
+    MIN_FOCUS_MINUTES + steps * FOCUS_STEP_MINUTES;
+
+  newMinutes = constrain(
+    newMinutes,
+    MIN_FOCUS_MINUTES,
+    MAX_FOCUS_MINUTES
+  );
+
+  if (newMinutes != focusMinutes) {
+    focusMinutes = newMinutes;
+  }
+
+  if (focusMinutes != lastReportedFocusMinutes) {
+    Serial.print("FOCUS_MINUTES:");
+    Serial.println(focusMinutes);
+
+    lastReportedFocusMinutes = focusMinutes;
+  }
+}
+
+
+// ============================================================
+// ZONE 8: BUTTON DEBOUNCE
+// Buttons use INPUT_PULLUP, so pressed = LOW.
+// ============================================================
+
+bool buttonPressed(ButtonState &button) {
+  int reading = digitalRead(button.pin);
+
+  if (reading != button.lastReading) {
+    button.lastChangeTime = millis();
+    button.lastReading = reading;
+  }
+
+  if (millis() - button.lastChangeTime >= DEBOUNCE_DELAY) {
+    if (reading != button.stableState) {
+      button.stableState = reading;
+
+      if (button.stableState == LOW) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+
+// ============================================================
+// ZONE 9: BUTTON EVENTS
+// ============================================================
+
+void updateButtons() {
+  if (buttonPressed(startButton)) {
+    focusRunning = true;
+    updateStatusLED();
+    Serial.println("BUTTON_START");
+  }
+
+  if (buttonPressed(pauseButton)) {
+    focusRunning = false;
+    updateStatusLED();
+    Serial.println("BUTTON_PAUSE");
+  }
+
+  if (buttonPressed(resetButton)) {
+    focusRunning = false;
+    updateStatusLED();
+    Serial.println("BUTTON_RESET");
+  }
+}
+
+
+// ============================================================
+// ZONE 10: NETWORK — START WI-FI
+// Comment this zone when testing Serial only.
+// ============================================================
+
+#if NETWORK_ENABLED
+
+void beginWifiConnection() {
+  Serial.println("[NETWORK] Starting Wi-Fi connection...");
+  WiFi.begin(SECRET_SSID, SECRET_PASS);
+  lastWifiAttempt = millis();
+}
+
+
+void maintainWifiConnection() {
+  int wifiStatus = WiFi.status();
+
+  if (wifiStatus == WL_CONNECTED) {
+    if (!wifiWasConnected) {
+      wifiWasConnected = true;
+
+      Serial.println("[NETWORK] Wi-Fi connected");
+
+      Serial.print("[NETWORK] Arduino IP: ");
+      Serial.println(WiFi.localIP());
+
+      Serial.print("[NETWORK] Backend IP: ");
+      Serial.println(backendIP);
+    }
+
+    return;
+  }
+
+  if (wifiWasConnected) {
+    wifiWasConnected = false;
+    Serial.println("[NETWORK] Wi-Fi disconnected");
+  }
+
+  if (millis() - lastWifiAttempt >= WIFI_RETRY_INTERVAL) {
+    lastWifiAttempt = millis();
+
+    Serial.println("[NETWORK] Retrying Wi-Fi...");
+    WiFi.begin(SECRET_SSID, SECRET_PASS);
+  }
+}
+
+
+// ============================================================
+// ZONE 11: NETWORK — BACKEND HEARTBEAT
+// Sends POST /api/status/device/heartbeat every 5 seconds.
+// ============================================================
 
 void sendHeartbeat() {
   if (WiFi.status() != WL_CONNECTED) {
     return;
   }
 
-  unsigned long now = millis();
-
-  if (now - lastHeartbeat < HEARTBEAT_INTERVAL) {
+  if (millis() - lastHeartbeat < HEARTBEAT_INTERVAL) {
     return;
   }
 
-  lastHeartbeat = now;
+  lastHeartbeat = millis();
 
-  Serial.println("[HTTP] Sending heartbeat...");
+  Serial.println("[NETWORK] Sending heartbeat...");
 
-  Serial.print("[HTTP] Connecting to ");
-  Serial.print(backendIP);
-  Serial.print(":");
-  Serial.println(BACKEND_PORT);
-
-  int connectionResult = heartbeatClient.connect(
-    backendIP,
-    BACKEND_PORT
-  );
-
-  Serial.print("[HTTP] Connect result: ");
-  Serial.println(connectionResult);
-
-  if (!connectionResult) {
-    Serial.println("[HTTP] Connection failed");
+  if (!heartbeatClient.connect(BACKEND_HOST, BACKEND_PORT)) {
+    Serial.println("[NETWORK] Backend connection failed");
     heartbeatClient.stop();
     return;
   }
 
-  Serial.println("[HTTP] TCP connected");
-
-  const char* body = "{}";
+  heartbeatClient.setTimeout(HTTP_TIMEOUT);
 
   heartbeatClient.println(
-    "POST /api/status/device/heartbeat HTTP/1.1"
+    "POST /api/status HTTP/1.1"
   );
 
-  heartbeatClient.println("Host: 10.157.72.124:3000");
+  heartbeatClient.print("Host: ");
+  heartbeatClient.print(backendIP);
+  heartbeatClient.print(":");
+  heartbeatClient.println(BACKEND_PORT);
+
   heartbeatClient.println("Content-Type: application/json");
   heartbeatClient.println("Content-Length: 2");
   heartbeatClient.println("Connection: close");
   heartbeatClient.println();
-  heartbeatClient.print(body);
+  heartbeatClient.println("{}");
 
-  // Give the network stack a short opportunity to send the request.
-  heartbeatClient.flush();
+  // Read the HTTP status line returned by the backend.
+  String response = heartbeatClient.readStringUntil('\n');
+  response.trim();
+
+  if (response.length() > 0) {
+    Serial.print("[NETWORK] HTTP response: ");
+    Serial.println(response);
+  }
+  else {
+    Serial.println("[NETWORK] No HTTP response received");
+  }
+
   heartbeatClient.stop();
-
-  Serial.println("[HTTP] Heartbeat request sent");
 }
+
+#endif // NETWORK_ENABLED
+
+
+// ============================================================
+// ZONE 12: SETUP
+// ============================================================
 
 void setup() {
   Serial.begin(9600);
-  Serial.println("BOARD_READY");
 
-  beginWifiConnection();
-
+  // RGB LED pins
   pinMode(RED_PIN, OUTPUT);
   pinMode(GREEN_PIN, OUTPUT);
   pinMode(BLUE_PIN, OUTPUT);
 
+  // Buttons use internal pull-up resistors
   pinMode(START_BUTTON_PIN, INPUT_PULLUP);
   pinMode(PAUSE_BUTTON_PIN, INPUT_PULLUP);
   pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
 
+  // Buzzer and potentiometer
   pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(POTENTIOMETER_PIN, INPUT);
+
   noTone(BUZZER_PIN);
-
-  Serial.setTimeout(20);
-
-  selectedMinutes = readSelectedMinutes();
-
   updateStatusLED();
 
-  Serial.print("FOCUS_MINUTES:");
-  Serial.println(selectedMinutes);
+  Serial.println("BOARD_READY");
+
+#if NETWORK_ENABLED
+  beginWifiConnection();
+#else
+  Serial.println("[NETWORK] Disabled by NETWORK_ENABLED");
+#endif
 }
 
 
+// ============================================================
+// ZONE 13: MAIN LOOP
+// ============================================================
+
 void loop() {
+  // ----- Network zone -----
+#if NETWORK_ENABLED
   maintainWifiConnection();
   sendHeartbeat();
+#endif
 
-  unsigned long now = millis();
-
-  // 1. Receive commands from Python.
-  if (Serial.available() > 0) {
-    command = Serial.readStringUntil('\n');
-    command.trim();
-
-    if (command == "PHONE_DETECTED") {
-      phoneDetected = true;
-
-      // แจ้งเตือนเมื่อพบโทรศัพท์
-      tone(BUZZER_PIN, 1000);
-
-      updateStatusLED();
-
-    } else if (command == "PHONE_CLEAR") {
-      phoneDetected = false;
-
-      // หยุดเสียงเมื่อไม่พบโทรศัพท์
-      noTone(BUZZER_PIN);
-
-      updateStatusLED();
-    }
+  // ----- Receive commands from Python -----
+  while (Serial.available() > 0) {
+    String command = Serial.readStringUntil('\n');
+    processSerialCommand(command);
   }
 
-  // 2. Read the potentiometer periodically.
-  if (now - lastPotRead >= POT_READ_INTERVAL) {
-    lastPotRead = now;
+  // ----- Read potentiometer -----
+  updatePotentiometer();
 
-    int newMinutes = readSelectedMinutes();
-
-    if (newMinutes != lastReportedMinutes) {
-      selectedMinutes = newMinutes;
-      lastReportedMinutes = newMinutes;
-
-      Serial.print("FOCUS_MINUTES:");
-      Serial.println(selectedMinutes);
-    }
-  }
-
-  // 3. Read buttons with debounce.
-  if (now - lastButtonCheck >= BUTTON_CHECK_INTERVAL) {
-    lastButtonCheck = now;
-
-    updateButton(
-      START_BUTTON_PIN,
-      lastStartReading,
-      stableStartState,
-      startDebounceTime,
-      "BUTTON_START"
-    );
-
-    updateButton(
-      PAUSE_BUTTON_PIN,
-      lastPauseReading,
-      stablePauseState,
-      pauseDebounceTime,
-      "BUTTON_PAUSE"
-    );
-
-    updateButton(
-      RESET_BUTTON_PIN,
-      lastResetReading,
-      stableResetState,
-      resetDebounceTime,
-      "BUTTON_RESET"
-    );
-  }
+  // ----- Read buttons -----
+  updateButtons();
 }
