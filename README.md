@@ -244,4 +244,8 @@ This section is required only if you want to use the Arduino alert system.
 
 ---
 
+## Clip VDO
+
+https://www.youtube.com/watch?v=4UOrXA4CjCE
+
 **Physical Computing Project 2026 — IT KMITL**
