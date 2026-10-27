@@ -5,6 +5,7 @@ type SystemStatus = {
   focus: string;
   device: string;
   phoneDetection: "clear" | "detected";
+  personPresent: boolean | null;
 };
 
 type StatusResponse = {
@@ -235,6 +236,8 @@ function App() {
 
   const phoneDetected =
     systemStatus.phoneDetection === "detected";
+
+const personPresent = systemStatus.personPresent;
 
   return (
     <div className={`${isDark ? "theme-dark" : "theme-light"} min-h-screen`}>
@@ -496,6 +499,46 @@ function App() {
                   {phoneDetected
                     ? "A phone has been detected by the camera."
                     : "No phone is currently detected."}
+                </p>
+              </article>
+
+              
+              <article className={cardClass}>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-bold tracking-[0.14em] text-[var(--text-muted)]">
+                    PERSON DETECTION
+                  </p>
+                  <span
+                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                      !isFocusing
+                        ? "bg-gray-400"
+                        : personPresent === true
+                          ? "bg-emerald-500"
+                          : personPresent === false
+                            ? "bg-amber-500"
+                            : "bg-gray-400"
+                    }`}
+                  />
+                </div>
+
+                <p className="mt-4 break-words text-lg font-semibold sm:text-xl">
+                  {!isFocusing
+                    ? "MONITORING INACTIVE"
+                    : personPresent === true
+                      ? "PERSON DETECTED"
+                      : personPresent === false
+                        ? "NO PERSON"
+                        : "WAITING FOR CAMERA"}
+                </p>
+
+                <p className="mt-2 text-sm leading-5 text-[var(--text-secondary)]">
+                  {!isFocusing
+                    ? "Person detection is inactive outside a focus session."
+                    : personPresent === true
+                      ? "A person is visible in the camera frame."
+                      : personPresent === false
+                        ? "No person is currently visible in the camera frame."
+                        : "Waiting for person detection data."}
                 </p>
               </article>
             </div>

@@ -54,6 +54,8 @@ const char TOPIC_BOARD_FOCUS_MINUTES[] =
   "dotheDamnWork/demo-2026-x7k9/board/focus/minutes";
 const char TOPIC_BOARD_FOCUS_BUTTON[] =
   "dotheDamnWork/demo-2026-x7k9/board/focus/button";
+const char TOPIC_PERSON[] =
+  "dotheDamnWork/demo-2026-x7k9/person";
 
 const unsigned long HEARTBEAT_INTERVAL = 5000;
 const unsigned long WIFI_RETRY_INTERVAL = 10000;
@@ -99,6 +101,13 @@ const int FOCUS_STEP_MINUTES = 5;
 
 bool phoneDetected = false;
 bool focusRunning = false;
+bool personPresent = false;
+bool personStatusKnown = false;
+bool personAlertActive = false;
+bool personAbsenceTiming = false;
+
+unsigned long personAbsentSince = 0;
+const unsigned long PERSON_ABSENCE_DELAY = 5000;
 
 int focusMinutes = 25;
 int lastReportedFocusMinutes = -1;
@@ -137,17 +146,31 @@ void setColor(int red, int green, int blue) {
 }
 
 void updateStatusLED() {
-  // Red: phone detected
-  if (phoneDetected) {
-    setColor(255, 0, 0);
+  // No alerts while focus is inactive
+  if (!focusRunning) {
+    personAlertActive = false;
+    personAbsenceTiming = false;
   }
-  // Blue: focus session running
+
+  // Priority 1: Phone detected
+  if (focusRunning && phoneDetected) {
+    setColor(255, 0, 0);
+    tone(BUZZER_PIN, 1000);
+  }
+  // Priority 2: Person absent for 5 seconds
+  else if (focusRunning && personAlertActive) {
+    setColor(255, 255, 0);
+    tone(BUZZER_PIN, 1000);
+  }
+  // Priority 3: Focus active, no alerts
   else if (focusRunning) {
     setColor(0, 0, 255);
+    noTone(BUZZER_PIN);
   }
-  // Green: idle or paused
+  // Idle, paused, or completed
   else {
     setColor(0, 255, 0);
+    noTone(BUZZER_PIN);
   }
 }
 
@@ -313,6 +336,59 @@ void publishMqttMessage(const char* topic, const char* message) {
   }
 }
 
+void processPersonPresence(String command) {
+  command.trim();
+
+  if (command == "present") {
+    personPresent = true;
+    personStatusKnown = true;
+    personAbsenceTiming = false;
+    personAlertActive = false;
+
+    Serial.println("[PERSON] Person present");
+  }
+  else if (command == "absent") {
+    personPresent = false;
+    personStatusKnown = true;
+
+    // Start the timer only once per absence period
+    if (!personAbsenceTiming) {
+      personAbsenceTiming = true;
+      personAbsentSince = millis();
+    }
+
+    Serial.println("[PERSON] Person absent");
+  }
+  else if (command == "inactive") {
+    personStatusKnown = false;
+    personAbsenceTiming = false;
+    personAlertActive = false;
+
+    Serial.println("[PERSON] Detection inactive");
+  }
+
+  updateStatusLED();
+}
+
+void updatePersonAlert() {
+  if (!focusRunning || !personStatusKnown || personPresent) {
+    personAbsenceTiming = false;
+    personAlertActive = false;
+    return;
+  }
+
+  if (!personAbsenceTiming) {
+    personAbsenceTiming = true;
+    personAbsentSince = millis();
+  }
+
+  if (!personAlertActive &&
+      millis() - personAbsentSince >= PERSON_ABSENCE_DELAY) {
+    personAlertActive = true;
+    Serial.println("[ALERT] No person for 5 seconds");
+  }
+}
+
 void onMqttMessage(int messageSize) {
   String topic = mqttClient.messageTopic();
   String command = "";
@@ -381,6 +457,11 @@ void onMqttMessage(int messageSize) {
       updateStatusLED();
       Serial.println("[MQTT] Focus reset");
     }
+  }
+
+  if (topic == TOPIC_PERSON) {
+    processPersonPresence(command);
+    return;
   }
 }
 
@@ -455,6 +536,12 @@ void maintainMqttConnection() {
     Serial.println("[MQTT] Subscribed to phone detection");
   } else {
     Serial.println("[MQTT] Failed to subscribe to phone detection");
+  }
+
+  if (mqttClient.subscribe(TOPIC_PERSON)) {
+    Serial.println("[MQTT] Subscribed to person detection");
+  } else {
+    Serial.println("[MQTT] Failed to subscribe to person detection");
   }
 
   publishMqttMessage(TOPIC_DEVICE_STATUS, "online");
@@ -565,6 +652,9 @@ void loop() {
   #if NETWORK_ENABLED
   publishBoardFocusMinutesIfChanged();
   #endif
+
+  updatePersonAlert();
+  updateStatusLED();
 
   // ----- Read buttons -----
   updateButtons();
