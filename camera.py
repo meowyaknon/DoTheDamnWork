@@ -1,3 +1,4 @@
+
 import importlib
 import time
 import json
@@ -31,21 +32,15 @@ except ModuleNotFoundError as exc:
 MODEL_PATH = "yolo26n.pt"
 CONFIDENCE_THRESHOLD = 0.50
 CLEAR_DELAY = 1.5
+FOCUS_POLL_INTERVAL = 0.5
 
-BACKEND_URL = "http://localhost:3000/api/status/phone"
+PHONE_URL = "http://localhost:3000/api/status/phone"
+PERSON_URL = "http://localhost:3000/api/status/person"
+FOCUS_URL = "http://localhost:3000/api/focus"
 # ------------------------------------------
 
 
-# ---------- ZONE 2: Backend URLs ----------
-FOCUS_URL = "http://localhost:3000/api/focus"
-FOCUS_START_URL = f"{FOCUS_URL}/start"
-FOCUS_PAUSE_URL = f"{FOCUS_URL}/pause"
-FOCUS_RESET_URL = f"{FOCUS_URL}/reset"
-FOCUS_DURATION_URL = f"{FOCUS_URL}/duration"
-# -----------------------------------------
-
-
-# ---------- ZONE 3: Initialize Model & Camera ----------
+# ---------- ZONE 2: Initialize Model & Camera ----------
 model = YOLO(MODEL_PATH)
 
 cap = cv2.VideoCapture(0)
@@ -53,43 +48,25 @@ cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
 phone_detected = False
+person_present = None
 last_phone_seen = 0.0
+last_focus_poll = 0.0
+focus_status = "unknown"
+
+# ---------- Performance Diagnostics ----------
+perf_window_start = time.perf_counter()
+perf_frames = 0
+perf_read = 0.0
+perf_focus_http = 0.0
+perf_yolo = 0.0
+perf_total = 0.0
+
 # -------------------------------------------------------
 
 
-# ---------- ZONE 4: Backend Communication ----------
-def update_backend_phone_status(detected: bool):
-    payload = json.dumps({
-        "detected": detected
-    }).encode("utf-8")
-
-    request = Request(
-        BACKEND_URL,
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-
-    try:
-        with urlopen(request, timeout=2) as response:
-            response.read()
-
-        status = "detected" if detected else "clear"
-        print(f"[Backend] Phone detection: {status}")
-
-    except HTTPError as exc:
-        print(f"[Backend] HTTP error: {exc.code}")
-
-    except (URLError, TimeoutError, OSError) as exc:
-        print(f"[Backend] Connection failed: {exc}")
-
-
-def post_backend_json(url: str, payload: dict | None = None):
-    """Send a JSON request to the backend."""
-    data = None
-
-    if payload is not None:
-        data = json.dumps(payload).encode("utf-8")
+# ---------- ZONE 3: Backend Communication ----------
+def post_backend_json(url: str, payload: dict):
+    data = json.dumps(payload).encode("utf-8")
 
     request = Request(
         url,
@@ -100,10 +77,7 @@ def post_backend_json(url: str, payload: dict | None = None):
 
     try:
         with urlopen(request, timeout=2) as response:
-            result = json.loads(response.read().decode("utf-8"))
-
-        print(f"[Backend] POST {url} -> success")
-        return result
+            return json.loads(response.read().decode("utf-8"))
 
     except HTTPError as exc:
         print(f"[Backend] HTTP error {exc.code}: {url}")
@@ -112,99 +86,264 @@ def post_backend_json(url: str, payload: dict | None = None):
         print(f"[Backend] Request failed: {exc}")
 
     return None
+
+
+def update_backend_phone_status(detected: bool):
+    result = post_backend_json(
+        PHONE_URL,
+        {"detected": detected},
+    )
+
+    if result is not None:
+        status = "detected" if detected else "clear"
+        print(f"[Backend] Phone detection: {status}")
+
+
+def update_backend_person_status(present: bool | None):
+    result = post_backend_json(
+        PERSON_URL,
+        {"present": present},
+    )
+
+    if result is not None:
+        status = (
+            "present" if present is True
+            else "absent" if present is False
+            else "inactive"
+        )
+        print(f"[Backend] Person detection: {status}")
+
+
+def get_backend_focus_status():
+    request = Request(
+        FOCUS_URL,
+        headers={"Accept": "application/json"},
+        method="GET",
+    )
+
+    try:
+        with urlopen(request, timeout=2) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+        # Support common response shapes:
+        # {"status":"focusing"}
+        # {"data":{"status":"focusing"}}
+        # {"data":{"focus":"focusing"}}
+        candidates = [
+            payload.get("data", {}).get("status")
+            if isinstance(payload.get("data"), dict)
+            else None,
+            payload.get("data", {}).get("focus")
+            if isinstance(payload.get("data"), dict)
+            else None,
+            payload.get("focus"),
+            payload.get("status"),
+        ]
+
+        valid_statuses = {
+            "idle",
+            "focusing",
+            "paused",
+            "completed",
+        }
+
+        for candidate in candidates:
+            if candidate in valid_statuses:
+                return candidate
+
+        print("[Backend] Unknown focus response format")
+        return "unknown"
+
+    except HTTPError as exc:
+        print(f"[Backend] Focus HTTP error: {exc.code}")
+
+    except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        print(f"[Backend] Cannot read focus status: {exc}")
+
+    return "unknown"
 # --------------------------------------------------
 
 
-# ---------- ZONE 5: Phone Detection Commands ----------
-def send_command(command: str):
-    """Send phone detection status to the backend."""
+# ---------- ZONE 4: Detection State Management ----------
+def clear_detection_states():
+    """Clear active alerts when focus monitoring is inactive."""
+    global phone_detected, person_present, last_phone_seen
 
-    if command == "PHONE_DETECTED":
-        update_backend_phone_status(True)
-
-    elif command == "PHONE_CLEAR":
+    if phone_detected:
+        phone_detected = False
         update_backend_phone_status(False)
-# -----------------------------------------------------
+
+    if person_present is not None:
+        person_present = None
+        update_backend_person_status(None)
+
+    last_phone_seen = 0.0
 
 
-# ---------- ZONE 6: Main Detection Loop ----------
+def update_detection_status(found_phone: bool, found_person: bool):
+    global phone_detected, person_present, last_phone_seen
+
+    now = time.monotonic()
+
+    # Phone detection with the existing clear delay.
+    if found_phone:
+        last_phone_seen = now
+
+        if not phone_detected:
+            phone_detected = True
+            update_backend_phone_status(True)
+
+    elif phone_detected and now - last_phone_seen >= CLEAR_DELAY:
+        phone_detected = False
+        update_backend_phone_status(False)
+
+    # Person presence is reported only when its state changes.
+    if person_present is None or person_present != found_person:
+        person_present = found_person
+        update_backend_person_status(found_person)
+# -------------------------------------------------------
+
+
+# ---------- ZONE 5: Main Detection Loop ----------
 try:
-    # Clear stale phone-detection status on startup.
-    update_backend_phone_status(False)
-
     if not cap.isOpened():
         raise RuntimeError("Cannot open webcam")
 
+    # Clear any stale states from a previous run.
+    update_backend_phone_status(False)
+    update_backend_person_status(None)
+
     while True:
-        # Read one camera frame per iteration.
+        loop_start = time.perf_counter()
+
+        # Measure camera capture time.
+        t0 = time.perf_counter()
         success, frame = cap.read()
+        perf_read += time.perf_counter() - t0
 
         if not success:
-            print("Cannot read webcam frame")
+            print("[Camera] Cannot read webcam frame")
             break
-
-        # Run YOLO on the current frame.
-        results = model.predict(frame, verbose=False)
-
-        found_phone = False
-
-        for result in results:
-            for box in result.boxes:
-                class_id = int(box.cls.item())
-                confidence = float(box.conf.item())
-                class_name = result.names[class_id]
-                label = str(class_name).lower().replace("_", " ")
-
-                is_phone = label in {
-                    "cell phone",
-                    "mobile phone",
-                    "phone",
-                }
-
-                if is_phone and confidence >= CONFIDENCE_THRESHOLD:
-                    found_phone = True
-                    break
-
-            if found_phone:
-                break
 
         now = time.monotonic()
 
-        if found_phone:
-            last_phone_seen = now
+        # Poll focus status periodically.
+        if now - last_focus_poll >= FOCUS_POLL_INTERVAL:
+            t0 = time.perf_counter()
+            focus_status = get_backend_focus_status()
+            perf_focus_http += time.perf_counter() - t0
+            last_focus_poll = time.monotonic()
 
-            if not phone_detected:
-                phone_detected = True
-                send_command("PHONE_DETECTED")
+        is_focusing = focus_status == "focusing"
 
-        elif phone_detected and now - last_phone_seen >= CLEAR_DELAY:
-            phone_detected = False
-            send_command("PHONE_CLEAR")
+        if is_focusing:
+            # Run one YOLO inference for both phone and person.
+            t0 = time.perf_counter()
+            results = model.predict(frame, verbose=False)
+            perf_yolo += time.perf_counter() - t0
+            found_phone = False
+            found_person = False
 
-        # Draw detection boxes and display status.
-        annotated_frame = results[0].plot()
+            for result in results:
+                for box in result.boxes:
+                    class_id = int(box.cls.item())
+                    confidence = float(box.conf.item())
+                    class_name = str(
+                        result.names[class_id]
+                    ).lower().replace("_", " ")
 
-        status = "PHONE DETECTED" if phone_detected else "FOCUS"
+                    if confidence < CONFIDENCE_THRESHOLD:
+                        continue
+
+                    if class_name in {
+                        "cell phone",
+                        "mobile phone",
+                        "phone",
+                    }:
+                        found_phone = True
+
+                    elif class_name == "person":
+                        found_person = True
+
+            update_detection_status(
+                found_phone,
+                found_person,
+            )
+
+            annotated_frame = results[0].plot()
+
+            if phone_detected:
+                display_status = "PHONE DETECTED"
+                display_color = (0, 0, 255)
+            elif person_present is False:
+                display_status = "NO PERSON"
+                display_color = (0, 165, 255)
+            else:
+                display_status = "FOCUS ACTIVE"
+                display_color = (0, 255, 0)
+
+        else:
+            # Pause, idle, completed, or unknown:
+            # stop inference and clear active detection states.
+            clear_detection_states()
+            annotated_frame = frame.copy()
+
+            if focus_status == "paused":
+                display_status = "PAUSED"
+            elif focus_status == "unknown":
+                display_status = "BACKEND UNAVAILABLE"
+            else:
+                display_status = "FOCUS INACTIVE"
+
+            display_color = (180, 180, 180)
 
         cv2.putText(
             annotated_frame,
-            status,
+            display_status,
             (20, 35),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.9,
-            (0, 0, 255) if phone_detected else (0, 255, 0),
+            0.8,
+            display_color,
             2,
         )
 
         cv2.imshow("Smart Focus Guardian", annotated_frame)
 
-        if cv2.waitKey(1) & 0xFF == ord("q"):
+        key = cv2.waitKey(1) & 0xFF
+
+        perf_frames += 1
+        perf_total += time.perf_counter() - loop_start
+
+        elapsed = time.perf_counter() - perf_window_start
+
+        if elapsed >= 2.0:
+            count = max(perf_frames, 1)
+
+            print(
+                f"[PERF] FPS={perf_frames / elapsed:.1f} | "
+                f"Read={perf_read * 1000 / count:.1f}ms | "
+                f"FocusAPI={perf_focus_http * 1000 / count:.1f}ms | "
+                f"YOLO={perf_yolo * 1000 / count:.1f}ms | "
+                f"Loop={perf_total * 1000 / count:.1f}ms"
+            )
+
+            perf_window_start = time.perf_counter()
+            perf_frames = 0
+            perf_read = 0.0
+            perf_focus_http = 0.0
+            perf_yolo = 0.0
+            perf_total = 0.0
+
+        if key == ord("q"):
             break
 
 finally:
     try:
-        update_backend_phone_status(False)
+        clear_detection_states()
     finally:
+        # Ensure inactive states are sent on shutdown.
+        update_backend_phone_status(False)
+        update_backend_person_status(None)
         cap.release()
         cv2.destroyAllWindows()
-# ------------------------------------------------
+# --------------------------------------------------

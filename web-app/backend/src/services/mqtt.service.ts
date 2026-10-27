@@ -3,6 +3,7 @@ import mqtt from "mqtt";
 import {
   updateDeviceHeartbeat,
   updatePhoneDetection,
+  updatePersonPresence,
 } from "./system.service.js";
 import {
   startFocus,
@@ -23,6 +24,7 @@ const TOPICS = {
   focusCommand: `${TOPIC_PREFIX}/focus/command`,
   boardFocusMinutes: `${TOPIC_PREFIX}/board/focus/minutes`,
   boardFocusButton: `${TOPIC_PREFIX}/board/focus/button`,
+  personPresence: `${TOPIC_PREFIX}/person`,
 };
 
 console.log("[MQTT] Starting connection...");
@@ -41,6 +43,7 @@ client.on("connect", () => {
     [
       TOPICS.deviceStatus,
       TOPICS.phoneDetection,
+      TOPICS.personPresence,
       TOPICS.boardFocusMinutes,
       TOPICS.boardFocusButton,
     ],
@@ -50,7 +53,7 @@ client.on("connect", () => {
         return;
       }
 
-      console.log("[MQTT] Subscribed to device status, phone detection, and board controls");
+      console.log("[MQTT] Subscribed to device status, phone detection, person detection, and board controls");
     },
   );
 });
@@ -71,6 +74,18 @@ client.on("message", (topic, payload) => {
       updatePhoneDetection(false);
     }
   }
+
+  if (topic === TOPICS.personPresence) {
+    if (message === "present") {
+      updatePersonPresence(true);
+    } else if (message === "absent") {
+      updatePersonPresence(false);
+    } else if (message === "inactive") {
+      updatePersonPresence(null);
+    }
+
+    return;
+}
 
   if (topic === TOPICS.boardFocusMinutes) {
   const minutes = Number(message);
@@ -166,5 +181,35 @@ export function publishPhoneDetection(detected: boolean): void {
     }
 
     console.log(`[MQTT] Phone status published: ${message}`);
+  });
+}
+
+export function publishPersonPresence(
+  present: boolean | null,
+): void {
+  if (!client.connected) {
+    console.warn(
+      "[MQTT] Not connected; person status not published",
+    );
+    return;
+  }
+
+  const message =
+    present === true
+      ? "present"
+      : present === false
+        ? "absent"
+        : "inactive";
+
+  client.publish(TOPICS.personPresence, message, (error) => {
+    if (error) {
+      console.error(
+        "[MQTT] Failed to publish person status:",
+        error.message,
+      );
+      return;
+    }
+
+    console.log(`[MQTT] Person status published: ${message}`);
   });
 }

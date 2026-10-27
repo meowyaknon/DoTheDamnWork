@@ -1,5 +1,5 @@
 
-const int BUZZER_PIN = 9;
+const int BUZZER_PIN = 8;
 
 void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
